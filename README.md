@@ -28,3 +28,9 @@ New packages: sf
 New functions: st_read(), st_as_sf(), st_transform(), st_cast(), geom_sf(), coord_sf()
 
 ***
+
+#### Lesson 3: AIS ship tracks
+
+New functions: st_crop(), st_make_valid(), st_intersection(), st_drop_geometry()
+
+***
