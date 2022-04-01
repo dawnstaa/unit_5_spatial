@@ -1,7 +1,8 @@
  
 library(tidyverse)
 install.packages("raster")
-library(raster)
+install.packages("rgdal")
+library(rgdal)
 install.packages("mapdata")
 library(mapdata)  # map_data worldHires coastline
 install.packages("marmap")
@@ -71,3 +72,24 @@ GOM_chl_map = ggplot() +
   xlab("Longitude") + ylab("Latitude") +
   scale_fill_gradientn(colors = cols, limits=c(-1, 1.75))  # Note I changed color limits from global
 ggsave(GOM_chl_map, filename='figures/GOM_chl_map.pdf', device="pdf", height=5, width=9)
+
+
+# NOAA bathymetry (from marmap package)
+# same GOM map limits
+lon_bounds = c(-72, -62)
+lat_bounds = c(39, 47)
+
+# Download bathymetry data from NOAA (in meters)
+# install.packages("rgdal") # may need to reinstall rgdal and raster packages for marmap to work
+bath_m_raw = marmap::getNOAA.bathy(lon1 = lon_bounds[1], 
+                                   lon2 = lon_bounds[2],
+                                   lat1 = lat_bounds[1], 
+                                   lat2 = lat_bounds[2], 
+                                   resolution = 4) # resolution default: 4 minutes (arc minutes)
+
+
+class(bath_m_raw)  # "bathy" class (from marmap)
+# convert bathymetry to data frame
+
+
+
