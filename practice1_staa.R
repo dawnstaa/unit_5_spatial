@@ -2,6 +2,7 @@
 library(tidyverse)
 install.packages("raster")
 install.packages("rgdal")
+library(raster)
 library(rgdal)
 install.packages("mapdata")
 library(mapdata)  # map_data worldHires coastline
@@ -90,6 +91,106 @@ bath_m_raw = marmap::getNOAA.bathy(lon1 = lon_bounds[1],
 
 class(bath_m_raw)  # "bathy" class (from marmap)
 # convert bathymetry to data frame
+bath_m_df = marmap::fortify.bathy(bath_m_raw)
+head(bath_m_df)
+
+#ifelse(z>20, NA, z) if z>20 let it be equal to NA otherwise make it z
+bath_m = bath_m_df%>%
+  mutate(depth_m = ifelse(z>20, NA, z)) %>% # 20m gives us wiggle room from sea level for tides/coastline
+  dplyr::select(-z)
+head(bath_m)
+summary(bath_m)
+  
+# plot raster data
+#group=group so that islands are drawn separately, color is the boundary, fill is the actual color
+#coord fix helps us to crop b4 imaging to save computing time, expand =false takes away the boundary
+#rescale takes a vector
+#breaks=c(-100, -300), 
+GOM_bath_map = ggplot()+
+  geom_raster(data = bath_m , aes(x = x, y = y, fill = depth_m)) + 
+  #geom_contour(data = bath_m , aes(x = x, y = y, fill = depth_m), breaks=c(-100), size=0.25) + 
+  geom_polygon(data = world_map, aes(x = long, y = lat, group = group), fill = "darkgrey", color = NA) + # add coastline; group keeps multipolygon coordinates separated into distinct groups
+  coord_fixed(1.3, xlim = lon_bounds, ylim = lat_bounds, expand=FALSE) + # Crop map edges
+  scale_fill_gradientn(colors=c("black", "darkblue", "lightblue"), 
+                       values = scales::rescale(c(-6000, -300, 0)), # rescale to make 2 different gradients (rescale function from scales package in tidyverse)
+                       name="Depth (m)") +
+  ylab("Lat") + xlab("Lon") + theme_bw() 
+
+GOM_bath_map # print to screen
+ggsave(GOM_bath_map, filename='figures/GOM_bath_raster.pdf', device="pdf", height=5, width=7)
+
+#For bathymetry data, it can be nice to add contour lines to the plot. Take a look at these contour maps without and without the underlying colored bathymetry data:
+# plot contours
+GOM_bath_map_contours = ggplot()+
+  geom_contour(data = bath_m, aes(x=x, y=y, z=depth_m), breaks=c(-100), size=c(0.25), colour="grey") + # add 100m contour
+  geom_contour(data = bath_m, aes(x=x, y=y, z=depth_m), breaks=c(-200), size=c(0.5), colour="grey") + # add 250m contour
+  geom_contour(data = bath_m, aes(x=x, y=y, z=depth_m), breaks=c(-500), size=c(0.75), colour="grey") + # add 250m contour
+  geom_polygon(data = world_map, aes(x = long, y = lat, group = group), fill = "black", color = NA) + # add coastline
+  coord_fixed(1.3, xlim = lon_bounds, ylim = lat_bounds, expand=FALSE) + # Crop map edges
+  ylab("Latitude") + xlab("Longitude") + theme_classic()
+
+GOM_bath_map_contours # print to screen
+ggsave(GOM_bath_map_contours, filename='figures/GOM_bath_contours.pdf', device="pdf", height=5, width=7)
+ggsave(GOM_bath_map, filename='figures/GOM_bath_raster.pdf', device="pdf", height=5, width=7)
+
+
+# plot contours
+GOM_bath_map_contours = ggplot()+
+  geom_contour(data = bath_m, aes(x=x, y=y, z=depth_m), breaks=c(-100), size=c(0.25), colour="grey") + # add 100m contour
+  geom_contour(data = bath_m, aes(x=x, y=y, z=depth_m), breaks=c(-200), size=c(0.5), colour="grey") + # add 250m contour
+  geom_contour(data = bath_m, aes(x=x, y=y, z=depth_m), breaks=c(-500), size=c(0.75), colour="grey") + # add 250m contour
+  geom_polygon(data = world_map, aes(x = long, y = lat, group = group), fill = "black", color = NA) + # add coastline
+  coord_fixed(1.3, xlim = lon_bounds, ylim = lat_bounds, expand=FALSE) + # Crop map edges
+  ylab("Latitude") + xlab("Longitude") + theme_classic()
+
+GOM_bath_map_contours # print to screen
+ggsave(GOM_bath_map_contours, filename='figures/GOM_bath_contours.pdf', device="pdf", height=5, width=7)
+
+# The GOM cropped data we made above:
+class(chl_GOM_raster)
+class(bath_m_raw)  # "bathy" class (from marmap)
+
+# convert bathymetry to raster
+bath_m_raster = marmap::as.raster(bath_m_raw)
+
+# Note the CRS is the same for both rasters WGS84
+# Extent is slightly different 
+# bath_m resolution is higher than chl resolution
+chl_GOM_raster
+bath_m_raster
+
+# Rename the bathymetry raster layer so its easier to work with
+names(bath_m_raster) = "bath_m"
+
+# resample bath_m to match chl_a
+bath_layer_chl_dims = raster::resample(bath_m_raster, chl_GOM_raster) # resamples r1 extent, origin and resolution to that of r2
+
+
+# If CRS didn't match up, we'd also project the bath_m raster to match the CRS of the chl raster:
+# bath_layer_chl_dims_proj = raster::projectRaster(bath_m_raster, crs = crs(chl_GOM_raster))
+
+# now that extent, origin, resolution and projection match, create raster stack
+raster_stack = stack(chl_GOM_raster, bath_layer_chl_dims)
+raster_stack
+plot(raster_stack) # double check everything is oriented correctly
+
+# convert to data frame
+stack_df = data.frame( raster::rasterToPoints(raster_stack))
+head(stack_df)
+summary(stack_df)
+dim(stack_df)
+
+# O'Reilly et al. 2019
+# chl_a benchmarks for oligo- meso- and eutrophic ocean waters derived from SeaWiFS data
+oligo_chl_a = 0.1 # chl_a < 0.1 mg/m^3
+eutro_chl_a = 1.67 # chl_a > 1.67 mg/m^3
+
+stack_df = stack_df %>%
+  mutate(trophic_index = case_when(chl_a < oligo_chl_a ~ "oligotrophic",
+                                   chl_a >= oligo_chl_a & chl_a <= eutro_chl_a ~ "mesotrophic",
+                                   chl_a > eutro_chl_a ~ "eutrophic")) %>%
+  mutate(trophic_index = as.factor(trophic_index)) #changing trophic index into a factor
+
 
 
 
